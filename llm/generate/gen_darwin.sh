@@ -22,17 +22,17 @@ COMMON_DARWIN_DEFS="-DBUILD_SHARED_LIBS=off -DCMAKE_OSX_DEPLOYMENT_TARGET=11.3 -
 
 case "${GOARCH}" in
 "amd64")
-    COMMON_CPU_DEFS="${COMMON_DARWIN_DEFS} -DCMAKE_SYSTEM_PROCESSOR=${ARCH} -DCMAKE_OSX_ARCHITECTURES=${ARCH} -DGGML_METAL=off -DGGML_NATIVE=off"
-
-    # Static build for linking into the Go binary
-    init_vars
-    CMAKE_TARGETS="--target llama --target ggml"
-    CMAKE_DEFS="${COMMON_CPU_DEFS} -DGGML_BLAS=off -DGGML_ACCELERATE=off -DGGML_AVX=off -DGGML_AVX2=off -DGGML_AVX512=off -DGGML_FMA=off -DGGML_F16C=off ${CMAKE_DEFS}"
-    BUILD_DIR="../build/darwin/${ARCH}_static"
-    echo "Building static library"
-    build
 
     if [ -z "$OLLAMA_SKIP_CPU_GENERATE" ]; then
+        COMMON_CPU_DEFS="${COMMON_DARWIN_DEFS} -DCMAKE_SYSTEM_PROCESSOR=${ARCH} -DCMAKE_OSX_ARCHITECTURES=${ARCH} -DGGML_METAL=off -DGGML_NATIVE=off"
+
+        # Static build for linking into the Go binary
+        init_vars
+        CMAKE_TARGETS="--target llama --target ggml"
+        CMAKE_DEFS="${COMMON_CPU_DEFS} -DGGML_BLAS=off -DGGML_ACCELERATE=off -DGGML_AVX=off -DGGML_AVX2=off -DGGML_AVX512=off -DGGML_FMA=off -DGGML_F16C=off ${CMAKE_DEFS}"
+        BUILD_DIR="../build/darwin/${ARCH}_static"
+        echo "Building static library"
+        build
         #
         # CPU first for the default library, set up as lowest common denominator for maximum compatibility (including Rosetta)
         #
@@ -68,7 +68,24 @@ case "${GOARCH}" in
         build
         sign ${BUILD_DIR}/bin/ollama_llama_server
         compress
+    elif [ -z "$OLLAMA_SKIP_METAL_GENERATE" ]; then
+        # Static build for linking into the Go binary
+        init_vars
+        CMAKE_TARGETS="--target llama --target ggml"
+        CMAKE_DEFS="${COMMON_DARWIN_DEFS} -DCMAKE_OSX_DEPLOYMENT_TARGET=11.3 -DCMAKE_SYSTEM_NAME=Darwin -DCMAKE_SYSTEM_PROCESSOR=${ARCH} -DCMAKE_OSX_ARCHITECTURES=${ARCH} ${CMAKE_DEFS}"
+        BUILD_DIR="../build/darwin/${ARCH}_static"
+        echo "Building static library"
+        build
+
+        init_vars
+        CMAKE_DEFS="${COMMON_DARWIN_DEFS} -DCMAKE_SYSTEM_PROCESSOR=${ARCH} -DCMAKE_OSX_ARCHITECTURES=${ARCH} ${CMAKE_DEFS}"
+        BUILD_DIR="../build/darwin/${ARCH}/metal"
+        EXTRA_LIBS="${EXTRA_LIBS} -framework Accelerate -framework Foundation -framework Metal -framework MetalKit -framework MetalPerformanceShaders"
+        build
+        sign ${BUILD_DIR}/bin/ollama_llama_server
+        compress
     fi
+
     ;;
 "arm64")
 
