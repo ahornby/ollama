@@ -25,12 +25,14 @@ case "${GOARCH}" in
     COMMON_CPU_DEFS="${COMMON_DARWIN_DEFS} -DCMAKE_SYSTEM_PROCESSOR=${ARCH} -DCMAKE_OSX_ARCHITECTURES=${ARCH} -DGGML_METAL=off -DGGML_NATIVE=off"
 
     # Static build for linking into the Go binary
-    init_vars
-    CMAKE_TARGETS="--target llama --target ggml"
-    CMAKE_DEFS="${COMMON_CPU_DEFS} -DGGML_BLAS=off -DGGML_ACCELERATE=off -DGGML_AVX=off -DGGML_AVX2=off -DGGML_AVX512=off -DGGML_FMA=off -DGGML_F16C=off ${CMAKE_DEFS}"
-    BUILD_DIR="../build/darwin/${ARCH}_static"
-    echo "Building static library"
-    build
+    if [ -z "${OLLAMA_SKIP_STATIC_GENERATE}" -o "${OLLAMA_CPU_TARGET}" = "static" ]; then
+        init_vars
+        CMAKE_TARGETS="--target llama --target ggml"
+        CMAKE_DEFS="${COMMON_CPU_DEFS} -DGGML_BLAS=off -DGGML_ACCELERATE=off -DGGML_AVX=off -DGGML_AVX2=off -DGGML_AVX512=off -DGGML_FMA=off -DGGML_F16C=off ${CMAKE_DEFS}"
+        BUILD_DIR="../build/darwin/${ARCH}_static"
+        echo "Building static library"
+        build
+    fi
 
     if [ -z "$OLLAMA_SKIP_CPU_GENERATE" ]; then
         #
@@ -69,6 +71,41 @@ case "${GOARCH}" in
         sign ${BUILD_DIR}/bin/ollama_llama_server
         compress
     fi
+
+    if [ -z "$OLLAMA_SKIP_METAL_GENERATE" ]; then
+        init_vars
+        CMAKE_DEFS="${COMMON_DARWIN_DEFS} -DCMAKE_SYSTEM_PROCESSOR=${ARCH} -DCMAKE_OSX_ARCHITECTURES=${ARCH} ${CMAKE_DEFS}"
+        CMAKE_DEFS="${COMMON_CPU_DEFS} -DGGML_METAL=on -DGGML_ACCELERATE=on -DGGML_AVX=on -DGGML_AVX2=on -DGGML_AVX512=off -DGGML_FMA=on ${CMAKE_DEFS}"
+        BUILD_DIR="../build/darwin/${ARCH}/metal"
+        echo "Building metal GPU"
+        EXTRA_LIBS="${EXTRA_LIBS} -framework Accelerate -framework Foundation -framework Metal -framework MetalKit -framework MetalPerformanceShaders"
+        build
+        sign ${BUILD_DIR}/bin/ollama_llama_server
+        compress
+    fi
+
+    # do "brew install vulkan-tools glslang molkten-vk" to get necessary tools
+    if [ -z "$MOLTEN_VK_PATH" ] && brew --prefix molten-vk; then
+        MAYBE_MOLTEN_VK_PATH=$(brew --prefix molten-vk)
+        if [ -r "${MAYBE_MOLTEN_VK_PATH}/lib/libMoltenVK.dylib" ]; then
+            MOLTEN_VK_PATH="$MAYBE_MOLTEN_VK_PATH"
+        fi
+    fi
+
+    if [[ -z "${OLLAMA_SKIP_VULKAN_GENERATE}" && -n "${MOLTEN_VK_PATH}" ]]; then
+        echo "MoltenVK libraries detected - building dynamic vulkan library"
+        init_vars
+        CMAKE_DEFS="${COMMON_CPU_DEFS} -DGGML_VULKAN=on -DGGML_ACCELERATE=on -DGGML_AVX=on -DGGML_AVX2=on -DGGML_AVX512=off -DGGML_FMA=on ${CMAKE_DEFS}"
+        BUILD_DIR="../build/darwin/${ARCH}/vulkan"
+        echo "Building MoltenVK vulkan GPU"
+        # EXTRA_LIBS="-L${MOLTEN_VK_PATH}/lib -llibMoltenVK"
+        EXTRA_LIBS="${EXTRA_LIBS} -framework Accelerate -framework Foundation -framework MolktenVK"
+        build
+        sign "${BUILD_DIR}/bin/ollama_llama_server"
+        compress
+    fi
+    exit 1
+
     ;;
 "arm64")
 
